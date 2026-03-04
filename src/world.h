@@ -25,7 +25,7 @@ inline float biome_move_cost(Biome b) {
     case Biome::Desert:    return 1.2f;
     case Biome::Grassland: return 1.0f;
     case Biome::Forest:    return 1.3f;
-    case Biome::Jungle:    return 1.5f;
+    case Biome::Jungle:    return 1.6f;
     default:               return 1.0f;
   }
 }
@@ -50,8 +50,9 @@ inline WorldFields build_world(const Config& cfg) {
   world.height.resize(cells);
   world.temperature.resize(cells);
   world.resources.resize(cells);
-  world.occupancy.resize(cells);
-  world.visitation.resize(cells);
+  world.toxicity.resize(cells, 0.0f);
+  world.occupancy.resize(cells, 0.0f);
+  world.visitation.resize(cells, 0);
   world.pheromone.resize(cells, 0.0f);
   world.moisture.resize(cells);
   world.biome.resize(cells);
@@ -88,29 +89,21 @@ inline WorldFields build_world(const Config& cfg) {
       // Resources modulated by biome carrying capacity
       float base_res = std::clamp(0.6f * island + 0.4f * (0.5f + 0.5f * n), 0.0f, 1.0f);
       world.resources[i] = base_res * biome_carrying_capacity(b);
-
-      world.occupancy[i] = 0.0f;
-      world.visitation[i] = 0;
+      // Initialize toxicity (jungles naturally more toxic)
+      world.toxicity[i] = (b == Biome::Jungle ? 0.4f : 0.05f) * base_res;
     }
   }
   return world;
 }
 
-inline void reset_dynamic_fields(WorldFields& world) {
-  std::fill(world.occupancy.begin(), world.occupancy.end(), 0.0f);
-  std::fill(world.visitation.begin(), world.visitation.end(), static_cast<uint16_t>(0));
-  std::fill(world.pheromone.begin(), world.pheromone.end(), 0.0f);
-}
-
 // ── Climate, Resource, and Pheromone Update ──────────────────────────────────
-inline void update_climate_and_resources(WorldFields& world, const Config& cfg, int step) {
-  const float season = std::sin((2.0f * kPi * static_cast<float>(step)) /
-                                std::max(30.0f, static_cast<float>(cfg.steps_per_generation)));
+inline void update_climate_and_resources(WorldFields& world, const Config& cfg, int tick) {
+  // Use absolute tick for continuous seasonality
+  const float season = std::sin((2.0f * kPi * static_cast<float>(tick)) / 300.0f); // 300 tick seasons
 
   const size_t cells = static_cast<size_t>(cfg.width) * static_cast<size_t>(cfg.height);
-
-  // Pheromone diffusion buffer
   std::vector<float> pheromone_next(cells);
+  std::vector<float> toxicity_next(cells);
 
   for (int y = 0; y < cfg.height; ++y) {
     for (int x = 0; x < cfg.width; ++x) {
@@ -130,7 +123,7 @@ inline void update_climate_and_resources(WorldFields& world, const Config& cfg, 
       world.moisture[i] += condense - evap + 0.002f * season;
       world.moisture[i] = std::clamp(world.moisture[i], 0.0f, 1.0f);
 
-      // ── Re-classify biome each step (slowly shifting biomes) ──
+      // Re-classify biome
       world.biome[i] = static_cast<uint8_t>(classify_biome(world.height[i], world.temperature[i], world.moisture[i]));
       b = static_cast<Biome>(world.biome[i]);
 
@@ -138,13 +131,24 @@ inline void update_climate_and_resources(WorldFields& world, const Config& cfg, 
       const float carrying = biome_carrying_capacity(b);
       const float growth = 0.014f * (1.0f - std::abs(world.temperature[i] - 0.55f) * 1.5f);
       const float pressure = 0.03f * mean3x3(world.occupancy, x, y, cfg);
-      world.resources[i] += growth * world.resources[i] * (carrying - world.resources[i]) - pressure;
+      
+      float res_increase = growth * world.resources[i] * (carrying - world.resources[i]) - pressure;
+      world.resources[i] += res_increase;
       world.resources[i] = std::clamp(world.resources[i], 0.0f, 1.5f);
 
+      // ── Evolving Botany: Toxicity ──
+      // Plant toxicity increases with high resource density and grazing pressure.
+      float tox_growth = 0.005f * (world.resources[i]) * (pressure > 0.01f ? 1.5f : 0.5f);
+      float tox_decay = 0.002f;
+      world.toxicity[i] = std::clamp(world.toxicity[i] + tox_growth - tox_decay, 0.0f, 1.0f);
+      
       // ── Pheromone decay + diffusion ──
       float diffused = mean3x3(world.pheromone, x, y, cfg);
       pheromone_next[i] = cfg.pheromone_decay * (0.7f * world.pheromone[i] + 0.3f * diffused);
       pheromone_next[i] = std::max(pheromone_next[i], 0.0f);
+      
+      // Gradually wipe occupancy
+      world.occupancy[i] *= 0.8f; 
     }
   }
 
