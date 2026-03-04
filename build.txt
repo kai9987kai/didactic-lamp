@@ -1,0 +1,13 @@
+﻿[1/2] Building CXX object CMakeFiles/universe_sim.dir/src/main.cpp.obj
+FAILED: [code=1] CMakeFiles/universe_sim.dir/src/main.cpp.obj 
+C:\msys64\ucrt64\bin\c++.exe   -std=c++17 -O3 -Wall -Wextra -Wpedantic -MD -MT CMakeFiles/universe_sim.dir/src/main.cpp.obj -MF CMakeFiles\universe_sim.dir\src\main.cpp.obj.d -o CMakeFiles/universe_sim.dir/src/main.cpp.obj -c C:/Users/kai99/Desktop/didactic-lamp/src/main.cpp
+In file included from C:/Users/kai99/Desktop/didactic-lamp/src/agents.h:2,
+                 from C:/Users/kai99/Desktop/didactic-lamp/src/main.cpp:1:
+C:/Users/kai99/Desktop/didactic-lamp/src/types.h: In function 'size_t sim::idx_2d(int, int, const Config&)':
+C:/Users/kai99/Desktop/didactic-lamp/src/types.h:109:12: error: 'clamp' is not a member of 'std'
+  109 |   x = std::clamp(x, 0, cfg.width - 1);
+      |            ^~~~~
+C:/Users/kai99/Desktop/didactic-lamp/src/types.h:110:12: error: 'clamp' is not a member of 'std'
+  110 |   y = std::clamp(y, 0, cfg.height - 1);
+      |            ^~~~~
+ninja: build stopped: subcommand failed.
