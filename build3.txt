@@ -1,0 +1,6 @@
+﻿[1/1] Linking CXX executable universe_sim.exe
+FAILED: [code=1] universe_sim.exe 
+C:\Windows\system32\cmd.exe /C "cd . && C:\msys64\ucrt64\bin\c++.exe   CMakeFiles/universe_sim.dir/src/main.cpp.obj -o universe_sim.exe -Wl,--out-implib,libuniverse_sim.dll.a -Wl,--major-image-version,0,--minor-image-version,0  -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 && cd ."
+C:/msys64/ucrt64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: cannot open output file universe_sim.exe: Permission denied
+collect2.exe: error: ld returned 1 exit status
+ninja: build stopped: subcommand failed.

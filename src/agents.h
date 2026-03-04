@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "world.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -107,11 +108,11 @@ inline void decode_morphology(Agent& a) {
   
   // Recalculate biological limits based on morphology
   // Huge, fast agents burn more energy!
-  a.metabolic_rate = 0.02f 
+  a.metabolic_rate = 0.008f 
                    * (a.body_size * a.body_size) // Quadratic mass penalty
                    * a.speed_mod;                // Linear speed penalty
                    
-  if(a.type == AgentType::Predator) a.metabolic_rate *= 1.4f; // Carnivores burn hotter
+  if(a.type == AgentType::Predator) a.metabolic_rate *= 1.2f; // Carnivores burn hotter
 }
 
 // ── Population Initialization ─────────────────────────────────────────────────
@@ -128,7 +129,7 @@ inline void init_population(std::vector<Agent>& population, const Config& cfg, s
   for (int idx = 0; idx < cfg.initial_agents; ++idx) {
     Agent& a = population[idx];
     a.pos = {xdist(rng), ydist(rng)};
-    a.energy = 8.0f;
+    a.energy = 12.0f;
     a.fitness = 0.0f;
     a.novelty_score = 0.0f;
     a.age = 0;
@@ -184,7 +185,7 @@ inline void resolve_hunting(std::vector<Agent>& population, const Config& cfg,
 
           // Body Size heavily impacts hunting!
           float size_advantage = predator.body_size / prey.body_size;
-          float success_prob = cfg.hunt_success_prob * size_advantage;
+          float success_prob = 0.12f * size_advantage; // Much lower success
           success_prob += 0.05f * (predator.energy / 12.0f);
           success_prob = std::clamp(success_prob, 0.05f, 0.85f);
 

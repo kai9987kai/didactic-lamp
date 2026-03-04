@@ -12,12 +12,12 @@ def create_visualizations(json_path):
     with open(json_path, 'r') as f:
         data = json.load(f)
         
-    generations = data['generations']
-    if not generations:
-        print("Error: No generation data found in the JSON file.")
+    ticks = data.get('ticks', [])
+    if not ticks:
+        print("Error: No tick data found in the JSON file.")
         sys.exit(1)
         
-    gen_indices = [g['generation'] for g in generations]
+    gen_indices = [g['tick'] for g in ticks]
     
     # ── Create Figure ──
     fig = plt.figure(figsize=(15, 10))
@@ -25,9 +25,9 @@ def create_visualizations(json_path):
     
     # 1. Population Dynamics (Herbivores vs Predators)
     ax1 = plt.subplot(2, 2, 1)
-    herbivores = [g['herbivore_count'] for g in generations]
-    predators = [g['predator_count'] for g in generations]
-    alive = [g['alive_count'] for g in generations]
+    herbivores = [g['herbivore_count'] for g in ticks]
+    predators = [g['predator_count'] for g in ticks]
+    alive = [h + p for h, p in zip(herbivores, predators)]
     
     ax1.plot(gen_indices, alive, 'k--', label='Total Alive', alpha=0.5)
     ax1.plot(gen_indices, herbivores, 'g-', label='Herbivores', linewidth=2)
@@ -41,8 +41,8 @@ def create_visualizations(json_path):
     
     # 2. Evolutionary Metrics (Fitness & Novelty)
     ax2 = plt.subplot(2, 2, 2)
-    mean_fitness = [g['mean_fitness'] for g in generations]
-    best_fitness = [g['best_fitness'] for g in generations]
+    mean_fitness = [g['mean_fitness'] for g in ticks]
+    best_fitness = [g.get('max_fitness', g['mean_fitness']) for g in ticks] 
     
     ax2.plot(gen_indices, mean_fitness, 'b-', label='Mean Fitness', linewidth=2)
     ax2.plot(gen_indices, best_fitness, 'b--', label='Best Fitness', alpha=0.5)
@@ -61,7 +61,7 @@ def create_visualizations(json_path):
     biome_colors = ['#1E90FF', '#E0FFFF', '#F4A460', '#7CFC00', '#228B22', '#006400']
     
     biome_history = {b: [] for b in biomes}
-    for g in generations:
+    for g in ticks:
         b_dist = g.get('biome_distribution', {})
         for b in biomes:
             biome_history[b].append(b_dist.get(b, 0.0) * 100) # Convert to percentage
@@ -81,8 +81,8 @@ def create_visualizations(json_path):
     
     # 4. Ecosystem Health (Pheromones & Diversity)
     ax4 = plt.subplot(2, 2, 4)
-    pheromones = [g['total_pheromone'] for g in generations]
-    diversity = [g['species_shannon'] for g in generations]
+    pheromones = [g['total_pheromone'] for g in ticks]
+    diversity = [g['species_shannon'] for g in ticks]
     
     color1 = 'm'
     ax4.set_xlabel('Generation')

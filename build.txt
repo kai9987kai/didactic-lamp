@@ -1,18 +1,2 @@
 ﻿[1/2] Building CXX object CMakeFiles/universe_sim.dir/src/main.cpp.obj
-FAILED: [code=1] CMakeFiles/universe_sim.dir/src/main.cpp.obj 
-C:\msys64\ucrt64\bin\c++.exe   -std=c++17 -O3 -Wall -Wextra -Wpedantic -MD -MT CMakeFiles/universe_sim.dir/src/main.cpp.obj -MF CMakeFiles\universe_sim.dir\src\main.cpp.obj.d -o CMakeFiles/universe_sim.dir/src/main.cpp.obj -c C:/Users/kai99/Desktop/didactic-lamp/src/main.cpp
-In file included from C:/Users/kai99/Desktop/didactic-lamp/src/agents.h:2,
-                 from C:/Users/kai99/Desktop/didactic-lamp/src/main.cpp:1:
-C:/Users/kai99/Desktop/didactic-lamp/src/types.h: In function 'float sim::density_radius(const std::vector<float>&, int, int, float, const Config&)':
-C:/Users/kai99/Desktop/didactic-lamp/src/types.h:161:33: error: 'ceil' is not a member of 'std'
-  161 |   int r = static_cast<int>(std::ceil(radius));
-      |                                 ^~~~
-C:/Users/kai99/Desktop/didactic-lamp/src/agents.h: In function 'std::array<float, 9> sim::policy_logits(Agent&, const Config&, const WorldFields&, int, int, float)':
-C:/Users/kai99/Desktop/didactic-lamp/src/agents.h:32:92: error: too many initializers for 'std::array<float, 15>'
-   32 |                                          a.memory[0], a.memory[1], a.memory[2], a.memory[3]};
-      |                                                                                            ^
-C:/Users/kai99/Desktop/didactic-lamp/src/agents.h: In function 'void sim::step_agents_movement(std::vector<Agent>&, const Config&, WorldFields&, int, std::mt19937_64&)':
-C:/Users/kai99/Desktop/didactic-lamp/src/agents.h:268:32: error: 'biome_move_cost' was not declared in this scope
-  268 |       const float biome_mult = biome_move_cost(curBiome);
-      |                                ^~~~~~~~~~~~~~~
-ninja: build stopped: subcommand failed.
+[2/2] Linking CXX executable universe_sim.exe

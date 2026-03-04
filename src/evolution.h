@@ -149,13 +149,14 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
   for (int idx = 0; idx < static_cast<int>(population.size()); ++idx) {
     Agent& a = population[idx];
     if (!a.alive || a.energy < cfg.reproduction_threshold) continue;
+    if (current_tick - a.last_mate_tick < 30) continue; // 30-tick cooldown
 
     int px = static_cast<int>(a.pos.x);
     int py = static_cast<int>(a.pos.y);
 
-    // Scan adjacent for mate
-    for (int dy = -1; dy <= 1; ++dy) {
-      for (int dx = -1; dx <= 1; ++dx) {
+    // Scan adjacent for mate (radius 2)
+    for (int dy = -2; dy <= 2; ++dy) {
+      for (int dx = -2; dx <= 2; ++dx) {
         int nx = std::clamp(px + dx, 0, cfg.width - 1);
         int ny = std::clamp(py + dy, 0, cfg.height - 1);
         size_t ci = idx_2d(nx, ny, cfg);
@@ -168,18 +169,21 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
           
           if (mate.species_id == a.species_id && 
               mate.type == a.type && 
-              mate.gender != a.gender) {
+              mate.gender != a.gender &&
+              (current_tick - mate.last_mate_tick > 30)) {
 
-            // Found a valid mate! Both lose high energy.
-            a.energy -= 6.0f;
-            mate.energy -= 6.0f;
+            // Found a valid mate! Both lose energy and trigger cooldown.
+            a.energy -= 5.0f;
+            mate.energy -= 5.0f;
+            a.last_mate_tick = current_tick;
+            mate.last_mate_tick = current_tick;
 
             // Spawn Child
             Agent child;
             child.pos = {std::clamp(a.pos.x + (coin(rng)-0.5f), 0.0f, static_cast<float>(cfg.width - 1)),
                          std::clamp(a.pos.y + (coin(rng)-0.5f), 0.0f, static_cast<float>(cfg.height - 1))};
                          
-            child.energy = 8.0f; // Started strong
+            child.energy = 4.0f; // Started strong
             child.max_lifespan = lifespan_dist(rng);
             child.type = a.type;
             child.gender = static_cast<Gender>(gender_dist(rng));

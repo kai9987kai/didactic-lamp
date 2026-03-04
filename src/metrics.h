@@ -25,6 +25,7 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
   species_counts.reserve(128);
 
   float sum_f = 0.0f;
+  float max_f = -1e9f;
   float sum_n = 0.0f;
   float sum_age = 0.0f;
   float sum_size = 0.0f;
@@ -34,6 +35,7 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
   for (const auto& a : population) {
     if (!a.alive) continue;
     sum_f += a.fitness;
+    max_f = std::max(max_f, a.fitness);
     sum_n += a.novelty_score;
     sum_age += static_cast<float>(a.age);
     
@@ -51,6 +53,7 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
   const float n = static_cast<float>(population.size());
   if(n > 0.0f) {
     m.mean_fitness = sum_f / n;
+    m.max_fitness = max_f;
     m.mean_novelty = sum_n / n;
     m.mean_age = sum_age / n;
     m.mean_size = sum_size / n;
@@ -116,6 +119,7 @@ inline std::string summary_json(const Config& cfg, const std::vector<Metrics>& m
     os << "    {"
        << "\"tick\": " << m.tick
        << ", \"mean_fitness\": " << m.mean_fitness
+       << ", \"max_fitness\": " << m.max_fitness
        << ", \"species_shannon\": " << m.diversity_shannon
        << ", \"species_count\": " << m.species_count
        << ", \"herbivore_count\": " << m.herbivore_count

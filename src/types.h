@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <cmath>
 
 namespace sim {
 
@@ -14,8 +15,8 @@ constexpr int kMemoryStates = 4; // RNN hidden state passed to next tick
 constexpr int kOutputNodes = kActions + kMemoryStates; // 9 outputs
 constexpr float kPi = 3.14159265358979323846f;
 
-// Neural policy architecture: 15 inputs → 10 hidden (tanh) → 9 outputs
-constexpr int kInputFeatures = 15;   // nx,ny,h,t,r,density,e,season,pheromone,moisture,biome, + 4 memory
+// Neural policy architecture: 16 inputs → 10 hidden (tanh) → 9 outputs
+constexpr int kInputFeatures = 16;   // nx,ny,h,t,r,density,e,season,pheromone,moisture,biome,toxicity, + 4 memory
 constexpr int kHiddenNeurons = 10;
 constexpr int kMorphologyGenes = 4;  // size, speed, sensory_radius, toxicity_resistance
 
@@ -23,8 +24,8 @@ constexpr int kBaseGenomeSize = kInputFeatures * kHiddenNeurons   // input→hid
                               + kHiddenNeurons                     // hidden biases
                               + kHiddenNeurons * kOutputNodes      // hidden→output weights
                               + kOutputNodes;                      // output biases
-// = 15*10 + 10 + 10*9 + 9 = 150 + 10 + 90 + 9 = 259
-constexpr int kGenomeSize = kBaseGenomeSize + kMorphologyGenes;     // 263
+// = 16*10 + 10 + 10*9 + 9 = 160 + 10 + 90 + 9 = 269
+constexpr int kGenomeSize = kBaseGenomeSize + kMorphologyGenes;     // 273
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 enum class AgentType : uint8_t { Herbivore = 0, Predator = 1 };
@@ -59,6 +60,7 @@ struct Agent {
   
   bool alive{true};
   int kills{0};
+  int last_mate_tick{-100};      // Cooldown for reproduction
   
   // Recurrent Memory State
   std::array<float, kMemoryStates> memory{};
@@ -85,11 +87,11 @@ struct Config {
   int snapshot_interval{100};        // Save metrics every N ticks
   uint64_t seed{7};
   float softmax_temperature{0.8f};
-  float predator_ratio{0.2f};        
+  float predator_ratio{0.05f};        
   float hunt_success_prob{0.35f};     
   float pheromone_decay{0.92f};       
   float speciation_threshold{0.80f};  
-  float reproduction_threshold{12.0f}; // Energy required to spawn offspring
+  float reproduction_threshold{11.0f}; // Energy required to spawn offspring
 };
 
 struct WorldFields {
@@ -116,6 +118,7 @@ struct SpeciesRecord {
 struct Metrics {
   int tick{};
   float mean_fitness{};
+  float max_fitness{};
   float mean_novelty{};
   float diversity_shannon{};
   int herbivore_count{};
