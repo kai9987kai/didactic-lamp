@@ -1,28 +1,34 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <algorithm>
 
 namespace sim {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 constexpr int kActions = 5;  // up, down, left, right, rest
+constexpr int kMemoryStates = 4; // RNN hidden state passed to next tick
+constexpr int kOutputNodes = kActions + kMemoryStates; // 9 outputs
 constexpr float kPi = 3.14159265358979323846f;
 
-// Neural policy architecture: 11 inputs → 8 hidden (tanh) → 5 outputs
-constexpr int kInputFeatures = 11;   // nx,ny,h,t,r,density,e,season,pheromone,moisture,biome
-constexpr int kHiddenNeurons = 8;
-constexpr int kGenomeSize = kInputFeatures * kHiddenNeurons   // input→hidden weights
-                          + kHiddenNeurons                     // hidden biases
-                          + kHiddenNeurons * kActions           // hidden→output weights
-                          + kActions;                           // output biases
-// = 11*8 + 8 + 8*5 + 5 = 88 + 8 + 40 + 5 = 141
+// Neural policy architecture: 15 inputs → 10 hidden (tanh) → 9 outputs
+constexpr int kInputFeatures = 15;   // nx,ny,h,t,r,density,e,season,pheromone,moisture,biome, + 4 memory
+constexpr int kHiddenNeurons = 10;
+constexpr int kMorphologyGenes = 4;  // size, speed, sensory_radius, toxicity_resistance
+
+constexpr int kBaseGenomeSize = kInputFeatures * kHiddenNeurons   // input→hidden weights
+                              + kHiddenNeurons                     // hidden biases
+                              + kHiddenNeurons * kOutputNodes      // hidden→output weights
+                              + kOutputNodes;                      // output biases
+// = 15*10 + 10 + 10*9 + 9 = 150 + 10 + 90 + 9 = 259
+constexpr int kGenomeSize = kBaseGenomeSize + kMorphologyGenes;     // 263
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 enum class AgentType : uint8_t { Herbivore = 0, Predator = 1 };
+enum class Gender : uint8_t { Male = 0, Female = 1 };
 
 enum class Biome : uint8_t {
   Ocean = 0,
@@ -41,56 +47,75 @@ struct Vec2 {
 
 struct Agent {
   Vec2 pos{};
-  float energy{6.0f};
+  float energy{8.0f};           // start with more reserve for mating
   float fitness{0.0f};
   float novelty_score{0.0f};
-  int age{0};
+  int age{0};                   // discrete ticks alive
+  int birth_tick{0};            // absolute simulation tick born
+  
   int species_id{0};
   AgentType type{AgentType::Herbivore};
-  float metabolic_rate{0.03f};
-  int max_lifespan{160};
+  Gender gender{Gender::Female};
+  
   bool alive{true};
   int kills{0};
+  
+  // Recurrent Memory State
+  std::array<float, kMemoryStates> memory{};
+  
+  // Morphology (Decoded from genome)
+  float body_size{1.0f};         // 0.5 to 2.0
+  float speed_mod{1.0f};         // 0.5 to 2.0 (chance to double-move or rest)
+  float sensory_radius{1.5f};    // 1.0 to 3.0
+  float tox_resistance{0.5f};    // 0.0 to 1.0
+  
+  // Biological Limits
+  float metabolic_rate{0.03f};
+  int max_lifespan{400};         // expanded for continuous simulation
+  
   std::array<float, kGenomeSize> genome{};
 };
 
 struct Config {
   int width{128};
   int height{128};
-  int agents{4096};
-  int generations{20};
-  int steps_per_generation{220};
+  int initial_agents{2048};
+  int max_agents{6000};              // population cap to prevent OOM
+  int simulation_ticks{5000};        // Phase 2: continuous run length
+  int snapshot_interval{100};        // Save metrics every N ticks
   uint64_t seed{7};
   float softmax_temperature{0.8f};
-  float predator_ratio{0.2f};        // fraction of population that starts as predators
-  float hunt_success_prob{0.35f};     // base probability of successful hunt
-  float pheromone_decay{0.92f};       // per-step decay multiplier
-  float speciation_threshold{0.80f};  // genetic distance for new species
+  float predator_ratio{0.2f};        
+  float hunt_success_prob{0.35f};     
+  float pheromone_decay{0.92f};       
+  float speciation_threshold{0.80f};  
+  float reproduction_threshold{12.0f}; // Energy required to spawn offspring
 };
 
 struct WorldFields {
   std::vector<float> height;
   std::vector<float> temperature;
   std::vector<float> resources;
+  std::vector<float> toxicity;       // Botany evolution: toxic flora
   std::vector<float> occupancy;
-  std::vector<uint16_t> visitation;
+  std::vector<uint32_t> visitation;  // expanded for long continuous sims
   std::vector<float> pheromone;
   std::vector<float> moisture;
-  std::vector<uint8_t> biome;  // Biome enum stored as uint8_t
+  std::vector<uint8_t> biome;  
 };
 
 struct SpeciesRecord {
   int species_id{};
-  int generation_born{};
-  int generation_extinct{-1};  // -1 = still alive
+  int tick_born{};
+  int tick_extinct{-1};  // -1 = still alive
   int peak_population{0};
   float mean_fitness{0.0f};
-  std::array<float, 4> centroid_genome{};  // first 4 genome values as signature
+  std::array<float, 4> centroid_genome{};  
 };
 
 struct Metrics {
+  int tick{};
   float mean_fitness{};
-  float best_fitness{};
   float mean_novelty{};
   float diversity_shannon{};
   int herbivore_count{};
@@ -98,11 +123,17 @@ struct Metrics {
   int species_count{};
   int extinction_events{};
   int speciation_events{};
+  
+  // Detailed ecology
   float mean_age{};
-  float mean_lifespan{};
+  float mean_size{};             // Morphology tracking
+  float mean_speed{};            // Morphology tracking
+  float mean_tox_res{};          // Morphology tracking
+  
   float total_pheromone{};
-  std::array<float, 6> biome_distribution{};  // fraction of land per biome type
-  int alive_count{};
+  std::array<float, 6> biome_distribution{}; 
+  int births{};                  // Spawning events this interval
+  int deaths{};                  // Natural + hunted deaths this interval
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -122,6 +153,22 @@ inline float mean3x3(const std::vector<float>& field, int x, int y, const Config
     }
   }
   return sum / static_cast<float>(count);
+}
+
+// Expand density calculation using morphology sensory radius
+inline float density_radius(const std::vector<float>& occupancy, int x, int y, float radius, const Config& cfg) {
+  float sum = 0.0f;
+  int r = static_cast<int>(std::ceil(radius));
+  int count = 0;
+  for (int dy = -r; dy <= r; ++dy) {
+    for (int dx = -r; dx <= r; ++dx) {
+      if (dx*dx + dy*dy <= radius*radius) {
+        sum += occupancy[idx_2d(x + dx, y + dy, cfg)];
+        ++count;
+      }
+    }
+  }
+  return count > 0 ? (sum / static_cast<float>(count)) : 0.0f;
 }
 
 }  // namespace sim
