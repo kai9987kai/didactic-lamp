@@ -1,78 +1,133 @@
 # didactic-lamp
 
-A buildable C++ universe-simulation prototype with advanced features:
+A buildable C++ ecosystem sandbox focused on emergent adaptation, trophic pressure, and world-scale regime shifts.
 
-## Core Systems
+## What is new
 
-- **Procedural terrain** — fBm over Perlin-like noise with island falloff
-- **Water cycle** — altitude-dependent moisture, evaporation/condensation dynamics
-- **6 Biome types** — Ocean, Tundra, Desert, Grassland, Forest, Jungle (dynamic classification from height × temperature × moisture)
-- **Dynamic climate** — seasonality + altitude/latitude temperature effects
-- **Renewable resources** — logistic regrowth modulated by biome carrying capacity and occupancy pressure
+- Climate niche adaptation: agents now evolve preferred temperature and moisture ranges, and survival depends on how well a cell matches that phenotype.
+- World shock cycle: droughts, blooms, cold snaps, and toxic blooms periodically rewire the map and create stronger ecological phase changes.
+- Stronger reproductive isolation: mating now depends on genetic distance instead of stale species ids, which produces cleaner early diversification.
+- Better telemetry: snapshots include habitat match, world resources, toxicity, active event, and event intensity.
+- Better operator controls: the sim supports a flag-based CLI instead of only brittle positional arguments.
+- Better dashboard: the Python visualizer now plots event windows, world-state metrics, niche fit, and demographic churn.
 
-## Agent Intelligence
+## Model overview
 
-- **Neural policy network** — 2-layer genome-encoded neural net (11 inputs → 8 hidden [tanh] → 5 actions)
-- **Softmax action sampling** — temperature-controlled stochastic policies
-- **Pheromone communication** — stigmergy-based signaling (food trails + danger signals) with decay and diffusion
-- **Biome-aware movement** — movement costs vary by terrain type; ocean is impassable
+### World systems
 
-## Predator-Prey Ecosystem
+- Procedural island terrain with biome classification
+- Seasonal climate and moisture drift
+- Renewable resources with occupancy pressure
+- Toxic flora dynamics
+- Pheromone diffusion and decay
+- Periodic macro events that perturb climate and ecology
 
-- **Trophic roles** — Herbivores forage resources, Predators hunt herbivores
-- **Hunting mechanics** — spatial proximity search with energy-dependent success probability
-- **Co-evolution** — type-segregated elitism ensures both trophic levels evolve independently
+### Agents
 
-## Life & Death
+- Genome-encoded recurrent neural policy
+- Morphology traits: size, speed, sensory radius, toxicity resistance
+- Niche traits: preferred temperature and preferred moisture
+- Herbivore foraging and predator hunting
+- Energy, metabolism, aging, reproduction, and death
 
-- **Age & metabolism** — metabolic cost increases with age; genome-derived max lifespan (40–220 steps)
-- **Natural death** — agents exceeding their lifespan die and release nutrients (corpse recycling)
-- **Intrinsic novelty reward** — exploration pressure via visitation count
-- **Social density reward** — coordination pressure from moderate neighbor density
+### Evolution
 
-## Evolution & Speciation
-
-- **Evolutionary loop** — elitism, crossover, and adaptive mutation rate
-- **Genetic-distance speciation** — L2-norm species classification with centroid tracking
-- **Reproductive isolation** — type-segregated breeding pools
-- **Adaptive radiation** — speciation threshold tightens over generations
-- **Species lifecycle tracking** — birth, peak population, extinction events
-
-## Output & Telemetry
-
-- **Rich JSON output** — per-generation metrics, species records, biome distributions
-- **Expanded metrics** — herbivore/predator counts, species diversity (Shannon entropy), mean age, pheromone totals, extinction/speciation events
-
-## Architecture
-
-```
-src/
-  types.h      — Core structs, enums, constants, helpers
-  noise.h      — Perlin noise and fBm functions
-  world.h      — World building, climate, biomes, pheromone dynamics
-  agents.h     — Neural policy, action sampling, movement, hunting
-  evolution.h  — Evolution, speciation tracking, genetic distance
-  metrics.h    — Metrics computation, JSON output
-  main.cpp     — Entry point, CLI parsing, simulation loop
-```
+- Genetic-distance speciation
+- Distance-gated mating
+- Continuous mutation and crossover
+- Species birth and extinction tracking
 
 ## Build
 
-```bash
+```powershell
+$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
 cmake -S . -B build
-cmake --build build -j
+cmake --build build
+```
+
+On this Windows/MSYS2 toolchain, `C:\msys64\ucrt64\bin` must be on `PATH` so `cc1plus.exe` can find its runtime DLLs.
+
+## Quickstart
+
+```powershell
+$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
+cmake -S . -B build
+cmake --build build
+.\build\universe_sim.exe --agents 1200 --ticks 900 --snapshot 100 --temperature 0.75 --shock-interval 150 --shock-duration 35 --shock-strength 0.22
+python visualize.py simulation_summary.json
 ```
 
 ## Run
 
-```bash
-./build/universe_sim [agents] [generations] [steps_per_generation] [temperature]
+Legacy positional usage still works:
+
+```powershell
+.\build\universe_sim.exe 1200 900 0.75
 ```
 
-Example:
+Flag-based usage is preferred:
 
-```bash
-./build/universe_sim 2048 8 140 0.7
+```powershell
+.\build\universe_sim.exe `
+  --agents 1200 `
+  --ticks 900 `
+  --snapshot 100 `
+  --temperature 0.75 `
+  --shock-interval 150 `
+  --shock-duration 35 `
+  --shock-strength 0.22
 ```
 
-This writes `simulation_summary.json` in the repository root.
+Useful flags:
+
+- `--agents`
+- `--ticks`
+- `--temperature`
+- `--snapshot`
+- `--seed`
+- `--predator-ratio`
+- `--reproduction`
+- `--speciation`
+- `--reproductive-distance`
+- `--shock-interval`
+- `--shock-duration`
+- `--shock-strength`
+
+The simulation writes `simulation_summary.json` to the repository root.
+Run `.\build\universe_sim.exe --help` to see the full CLI.
+
+## Visualize
+
+```powershell
+python visualize.py simulation_summary.json
+```
+
+This generates `simulation_dashboard.png` with:
+
+- population dynamics
+- fitness vs. niche fit
+- world resources, toxicity, and pheromones
+- biome distribution
+- diversity tracking
+- births, deaths, and event intensity
+
+Use `python visualize.py simulation_summary.json --show` if you want the plot window as well.
+
+## Latest verified run
+
+Verified on March 5, 2026 with:
+
+```powershell
+.\build\universe_sim.exe --agents 1200 --ticks 900 --snapshot 100 --temperature 0.75 --shock-interval 150 --shock-duration 35 --shock-strength 0.22
+```
+
+Observed behavior:
+
+- 3 species were present through the early and middle simulation snapshots.
+- A `Bloom` phase was visible at tick 300 and a `ToxicBloom` phase at tick 600.
+- The population collapsed to extinction at tick 875 in this configuration.
+
+Generated artifacts:
+
+- `simulation_summary.json`
+- `simulation_dashboard.png`
