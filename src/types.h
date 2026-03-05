@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 #include <cmath>
@@ -16,16 +17,16 @@ constexpr int kOutputNodes = kActions + kMemoryStates; // 9 outputs
 constexpr float kPi = 3.14159265358979323846f;
 
 // Neural policy architecture: 16 inputs → 10 hidden (tanh) → 9 outputs
-constexpr int kInputFeatures = 16;   // nx,ny,h,t,r,density,e,season,pheromone,moisture,biome,toxicity, + 4 memory
+constexpr int kInputFeatures = 18;   // env state, niche match, and 4 recurrent memory values
 constexpr int kHiddenNeurons = 10;
-constexpr int kMorphologyGenes = 4;  // size, speed, sensory_radius, toxicity_resistance
+constexpr int kTraitGenes = 6;       // morphology + thermal/moisture niche preferences
 
 constexpr int kBaseGenomeSize = kInputFeatures * kHiddenNeurons   // input→hidden weights
                               + kHiddenNeurons                     // hidden biases
                               + kHiddenNeurons * kOutputNodes      // hidden→output weights
                               + kOutputNodes;                      // output biases
 // = 16*10 + 10 + 10*9 + 9 = 160 + 10 + 90 + 9 = 269
-constexpr int kGenomeSize = kBaseGenomeSize + kMorphologyGenes;     // 273
+constexpr int kGenomeSize = kBaseGenomeSize + kTraitGenes;          // 295
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 enum class AgentType : uint8_t { Herbivore = 0, Predator = 1 };
