@@ -41,6 +41,14 @@ enum class Biome : uint8_t {
   Jungle = 5
 };
 
+enum class WorldEvent : uint8_t {
+  None = 0,
+  Drought = 1,
+  ColdSnap = 2,
+  Bloom = 3,
+  ToxicBloom = 4
+};
+
 // ── Core Structs ─────────────────────────────────────────────────────────────
 struct Vec2 {
   float x{};
@@ -71,6 +79,8 @@ struct Agent {
   float speed_mod{1.0f};         // 0.5 to 2.0 (chance to double-move or rest)
   float sensory_radius{1.5f};    // 1.0 to 3.0
   float tox_resistance{0.5f};    // 0.0 to 1.0
+  float preferred_temperature{0.5f};
+  float preferred_moisture{0.5f};
   
   // Biological Limits
   float metabolic_rate{0.03f};
@@ -91,8 +101,19 @@ struct Config {
   float predator_ratio{0.05f};        
   float hunt_success_prob{0.35f};     
   float pheromone_decay{0.92f};       
-  float speciation_threshold{0.80f};  
+  float speciation_threshold{0.55f};
+  float reproductive_distance{0.42f};
   float reproduction_threshold{11.0f}; // Energy required to spawn offspring
+  int shock_interval{180};
+  int shock_duration{45};
+  float shock_strength{0.18f};
+};
+
+struct ActiveWorldEvent {
+  WorldEvent type{WorldEvent::None};
+  float intensity{0.0f};
+  float phase{0.0f};
+  bool active{false};
 };
 
 struct WorldFields {
@@ -133,11 +154,16 @@ struct Metrics {
   float mean_size{};             // Morphology tracking
   float mean_speed{};            // Morphology tracking
   float mean_tox_res{};          // Morphology tracking
+  float mean_habitat_match{};
+  float mean_resources{};
+  float mean_toxicity{};
   
   float total_pheromone{};
   std::array<float, 6> biome_distribution{}; 
   int births{};                  // Spawning events this interval
   int deaths{};                  // Natural + hunted deaths this interval
+  WorldEvent active_event{WorldEvent::None};
+  float event_intensity{};
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
