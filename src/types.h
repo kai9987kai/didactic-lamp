@@ -167,9 +167,56 @@ struct Metrics {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+template <typename T, typename U, typename V>
+constexpr auto clamp_value(T value, U low, V high) -> typename std::common_type<T, U, V>::type {
+  using Result = typename std::common_type<T, U, V>::type;
+  const Result v = static_cast<Result>(value);
+  const Result lo = static_cast<Result>(low);
+  const Result hi = static_cast<Result>(high);
+  return v < lo ? lo : (hi < v ? hi : v);
+}
+
+inline const char* world_event_name(WorldEvent event) {
+  switch (event) {
+    case WorldEvent::Drought: return "Drought";
+    case WorldEvent::ColdSnap: return "ColdSnap";
+    case WorldEvent::Bloom: return "Bloom";
+    case WorldEvent::ToxicBloom: return "ToxicBloom";
+    case WorldEvent::None:
+    default: return "None";
+  }
+}
+
+inline ActiveWorldEvent current_world_event(const Config& cfg, int tick) {
+  ActiveWorldEvent state;
+  if (cfg.shock_interval <= 0 || cfg.shock_duration <= 0 || tick < cfg.shock_interval) {
+    return state;
+  }
+
+  const int relative_tick = tick - cfg.shock_interval;
+  const int cycle = relative_tick / cfg.shock_interval;
+  const int offset = relative_tick % cfg.shock_interval;
+  if (offset >= cfg.shock_duration) {
+    return state;
+  }
+
+  static constexpr std::array<WorldEvent, 4> kCycle{
+      WorldEvent::Drought, WorldEvent::Bloom, WorldEvent::ColdSnap, WorldEvent::ToxicBloom};
+
+  const float phase =
+      cfg.shock_duration > 1 ? static_cast<float>(offset) / static_cast<float>(cfg.shock_duration - 1) : 0.0f;
+  const float envelope = 0.25f + 0.75f * std::sin((phase + 0.05f) * kPi);
+
+  state.type = kCycle[static_cast<size_t>(cycle) % kCycle.size()];
+  state.intensity = cfg.shock_strength * envelope;
+  state.phase = phase;
+  state.active = true;
+  return state;
+}
+
 inline size_t idx_2d(int x, int y, const Config& cfg) {
-  x = std::clamp(x, 0, cfg.width - 1);
-  y = std::clamp(y, 0, cfg.height - 1);
+  x = clamp_value(x, 0, cfg.width - 1);
+  y = clamp_value(y, 0, cfg.height - 1);
   return static_cast<size_t>(y) * static_cast<size_t>(cfg.width) + static_cast<size_t>(x);
 }
 

@@ -105,7 +105,7 @@ struct SpeciesTracker {
   int count_extinctions_since(int last_tick, int current_tick) const {
     int count = 0;
     for (const auto& r : records) {
-      if (r.tick_extinct >= last_tick && r.tick_extinct <= current_tick) ++count;
+      if (r.tick_extinct > last_tick && r.tick_extinct <= current_tick) ++count;
     }
     return count;
   }
@@ -113,7 +113,7 @@ struct SpeciesTracker {
   int count_speciations_since(int last_tick, int current_tick) const {
     int count = 0;
     for (const auto& r : records) {
-      if (r.tick_born >= last_tick && r.tick_born <= current_tick) ++count;
+      if (r.tick_born > last_tick && r.tick_born <= current_tick) ++count;
     }
     return count;
   }
@@ -157,8 +157,8 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
     // Scan adjacent for mate (radius 2)
     for (int dy = -2; dy <= 2; ++dy) {
       for (int dx = -2; dx <= 2; ++dx) {
-        int nx = std::clamp(px + dx, 0, cfg.width - 1);
-        int ny = std::clamp(py + dy, 0, cfg.height - 1);
+        int nx = clamp_value(px + dx, 0, cfg.width - 1);
+        int ny = clamp_value(py + dy, 0, cfg.height - 1);
         size_t ci = idx_2d(nx, ny, cfg);
 
         for (int mate_idx : cell_agents[ci]) {
@@ -167,10 +167,10 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
           
           if (!mate.alive || mate.energy < cfg.reproduction_threshold) continue;
           
-          if (mate.species_id == a.species_id && 
-              mate.type == a.type && 
+          if (mate.type == a.type && 
               mate.gender != a.gender &&
-              (current_tick - mate.last_mate_tick > 30)) {
+              (current_tick - mate.last_mate_tick > 30) &&
+              genetic_distance(a, mate) <= cfg.reproductive_distance) {
 
             // Found a valid mate! Both lose energy and trigger cooldown.
             a.energy -= 5.0f;
@@ -180,8 +180,8 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
 
             // Spawn Child
             Agent child;
-            child.pos = {std::clamp(a.pos.x + (coin(rng)-0.5f), 0.0f, static_cast<float>(cfg.width - 1)),
-                         std::clamp(a.pos.y + (coin(rng)-0.5f), 0.0f, static_cast<float>(cfg.height - 1))};
+            child.pos = {clamp_value(a.pos.x + (coin(rng) - 0.5f), 0.0f, static_cast<float>(cfg.width - 1)),
+                         clamp_value(a.pos.y + (coin(rng) - 0.5f), 0.0f, static_cast<float>(cfg.height - 1))};
                          
             child.energy = 4.0f; // Started strong
             child.max_lifespan = lifespan_dist(rng);

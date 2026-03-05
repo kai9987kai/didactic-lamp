@@ -11,6 +11,13 @@
 
 namespace sim {
 
+inline float habitat_match_for_metrics(const Agent& a, const WorldFields& world, const Config& cfg) {
+  const size_t i = idx_2d(static_cast<int>(a.pos.x), static_cast<int>(a.pos.y), cfg);
+  const float thermal_match = 1.0f - std::abs(world.temperature[i] - a.preferred_temperature);
+  const float moisture_match = 1.0f - std::abs(world.moisture[i] - a.preferred_moisture);
+  return clamp_value(0.55f * thermal_match + 0.45f * moisture_match, 0.0f, 1.0f);
+}
+
 // ── Compute Continuous Metrics ───────────────────────────────────────────────
 inline Metrics compute_metrics(const std::vector<Agent>& population, const WorldFields& world,
                                 const Config& cfg, int current_tick, int births, int deaths) {
@@ -18,6 +25,9 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
   m.tick = current_tick;
   m.births = births;
   m.deaths = deaths;
+  const ActiveWorldEvent active_event = current_world_event(cfg, current_tick);
+  m.active_event = active_event.type;
+  m.event_intensity = active_event.intensity;
 
   if (population.empty()) return m;
 
@@ -31,6 +41,7 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
   float sum_size = 0.0f;
   float sum_speed = 0.0f;
   float sum_tox = 0.0f;
+  float sum_match = 0.0f;
 
   for (const auto& a : population) {
     if (!a.alive) continue;
@@ -43,6 +54,7 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
     sum_size += a.body_size;
     sum_speed += a.speed_mod;
     sum_tox += a.tox_resistance;
+    sum_match += habitat_match_for_metrics(a, world, cfg);
 
     if (a.type == AgentType::Herbivore) ++m.herbivore_count;
     else ++m.predator_count;
@@ -59,6 +71,7 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
     m.mean_size = sum_size / n;
     m.mean_speed = sum_speed / n;
     m.mean_tox_res = sum_tox / n;
+    m.mean_habitat_match = sum_match / n;
   }
 
   float h = 0.0f;
@@ -74,12 +87,20 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
 
   const size_t cells = static_cast<size_t>(cfg.width) * static_cast<size_t>(cfg.height);
   std::array<int, 6> biome_counts{};
+  float resource_sum = 0.0f;
+  float toxicity_sum = 0.0f;
   for (size_t i = 0; i < cells; ++i) {
     int b = world.biome[i];
     if (b >= 0 && b < 6) biome_counts[b]++;
+    resource_sum += world.resources[i];
+    toxicity_sum += world.toxicity[i];
   }
   for (int i = 0; i < 6; ++i) {
     m.biome_distribution[i] = static_cast<float>(biome_counts[i]) / static_cast<float>(cells);
+  }
+  if (cells > 0) {
+    m.mean_resources = resource_sum / static_cast<float>(cells);
+    m.mean_toxicity = toxicity_sum / static_cast<float>(cells);
   }
 
   return m;
@@ -109,8 +130,12 @@ inline std::string summary_json(const Config& cfg, const std::vector<Metrics>& m
      << "\"simulation_ticks\": " << cfg.simulation_ticks
      << ", \"tick_interval\": " << cfg.snapshot_interval
      << ", \"reproduction_threshold\": " << cfg.reproduction_threshold
-     << ", \"predator_ratio\": " << cfg.predator_ratio
+      << ", \"predator_ratio\": " << cfg.predator_ratio
      << ", \"speciation_threshold\": " << cfg.speciation_threshold
+     << ", \"reproductive_distance\": " << cfg.reproductive_distance
+     << ", \"shock_interval\": " << cfg.shock_interval
+     << ", \"shock_duration\": " << cfg.shock_duration
+     << ", \"shock_strength\": " << cfg.shock_strength
      << "},\n";
 
   os << "  \"ticks\": [\n";
@@ -126,9 +151,14 @@ inline std::string summary_json(const Config& cfg, const std::vector<Metrics>& m
        << ", \"predator_count\": " << m.predator_count
        << ", \"deaths\": " << m.deaths
        << ", \"births\": " << m.births
-       << ", \"mean_age\": " << m.mean_age
-       << ", \"total_pheromone\": " << m.total_pheromone
-       << ", \"morphology\": {"
+        << ", \"mean_age\": " << m.mean_age
+        << ", \"total_pheromone\": " << m.total_pheromone
+        << ", \"mean_habitat_match\": " << m.mean_habitat_match
+        << ", \"mean_resources\": " << m.mean_resources
+        << ", \"mean_toxicity\": " << m.mean_toxicity
+        << ", \"active_event\": \"" << world_event_name(m.active_event) << "\""
+        << ", \"event_intensity\": " << m.event_intensity
+        << ", \"morphology\": {"
        << "\"mean_size\": " << m.mean_size
        << ", \"mean_speed\": " << m.mean_speed
        << ", \"mean_tox_res\": " << m.mean_tox_res

@@ -9,6 +9,12 @@
 
 namespace sim {
 
+inline float climate_match(const Agent& a, float temperature, float moisture) {
+  const float thermal_match = 1.0f - std::abs(temperature - a.preferred_temperature);
+  const float moisture_match = 1.0f - std::abs(moisture - a.preferred_moisture);
+  return clamp_value(0.55f * thermal_match + 0.45f * moisture_match, 0.0f, 1.0f);
+}
+
 // ── Neural Policy Network (RNN) ──────────────────────────────────────────────
 inline std::array<float, kOutputNodes> policy_logits(Agent& a, const Config& cfg,
                                                     const WorldFields& world, int x, int y,
@@ -24,12 +30,14 @@ inline std::array<float, kOutputNodes> policy_logits(Agent& a, const Config& cfg
   const float moist = world.moisture[i];
   const float biome_f = static_cast<float>(world.biome[i]) / 5.0f;    
   const float toxicity = world.toxicity[i];
+  const float niche_match = climate_match(a, t, moist);
+  const float niche_stress = 1.0f - niche_match;
 
   // Morphology-driven density
   const float density = density_radius(world.occupancy, x, y, a.sensory_radius, cfg);
 
   std::array<float, kInputFeatures> feat{nx, ny, h, t, r, density, e, season_phase,
-                                         pheromone, moist, biome_f, toxicity,
+                                         pheromone, moist, biome_f, toxicity, niche_match, niche_stress,
                                          a.memory[0], a.memory[1], a.memory[2], a.memory[3]};
 
   const int w1_size = kInputFeatures * kHiddenNeurons;
@@ -95,16 +103,18 @@ inline void decode_morphology(Agent& a) {
   const int end = kGenomeSize;
   
   // Body Size: 0.5x to 2.0x
-  a.body_size = std::clamp(1.0f + a.genome[end-4], 0.5f, 2.0f);
+  a.body_size = clamp_value(1.0f + a.genome[end - 6], 0.5f, 2.0f);
   
   // Speed Modifier: 0.5x to 2.0x 
-  a.speed_mod = std::clamp(1.0f + a.genome[end-3], 0.5f, 2.0f);
+  a.speed_mod = clamp_value(1.0f + a.genome[end - 5], 0.5f, 2.0f);
   
   // Sensory Radius: 1.0 to 3.0 cells
-  a.sensory_radius = std::clamp(2.0f + a.genome[end-2], 1.0f, 3.0f);
+  a.sensory_radius = clamp_value(2.0f + a.genome[end - 4], 1.0f, 3.0f);
   
   // Toxicity Resistance: 0.0 to 1.0 (requires tight adaptation)
-  a.tox_resistance = std::clamp(0.5f + a.genome[end-1], 0.0f, 1.0f);
+  a.tox_resistance = clamp_value(0.5f + a.genome[end - 3], 0.0f, 1.0f);
+  a.preferred_temperature = clamp_value(0.5f + 0.5f * a.genome[end - 2], 0.0f, 1.0f);
+  a.preferred_moisture = clamp_value(0.5f + 0.5f * a.genome[end - 1], 0.0f, 1.0f);
   
   // Recalculate biological limits based on morphology
   // Huge, fast agents burn more energy!
@@ -175,8 +185,8 @@ inline void resolve_hunting(std::vector<Agent>& population, const Config& cfg,
       for (int dx = -r; dx <= r; ++dx) {
         if(dx*dx + dy*dy > predator.sensory_radius * predator.sensory_radius) continue;
         
-        int nx = std::clamp(px + dx, 0, cfg.width - 1);
-        int ny = std::clamp(py + dy, 0, cfg.height - 1);
+        int nx = clamp_value(px + dx, 0, cfg.width - 1);
+        int ny = clamp_value(py + dy, 0, cfg.height - 1);
         size_t ci = idx_2d(nx, ny, cfg);
 
         for (int prey_idx : cell_agents[ci]) {
@@ -187,7 +197,7 @@ inline void resolve_hunting(std::vector<Agent>& population, const Config& cfg,
           float size_advantage = predator.body_size / prey.body_size;
           float success_prob = 0.12f * size_advantage; // Much lower success
           success_prob += 0.05f * (predator.energy / 12.0f);
-          success_prob = std::clamp(success_prob, 0.05f, 0.85f);
+          success_prob = clamp_value(success_prob, 0.05f, 0.85f);
 
           if (roll(rng) < success_prob) {
             float energy_gain = std::min(prey.energy * 0.7f + (prey.body_size * 2.0f), 8.0f);
@@ -237,8 +247,8 @@ inline void step_agents_movement(std::vector<Agent>& population, const Config& c
       size_t i = idx_2d(x, y, cfg);
 
       if (static_cast<Biome>(world.biome[i]) == Biome::Ocean) {
-        a.pos.x = std::clamp(a.pos.x + (a.pos.x < cfg.width / 2.0f ? 1.0f : -1.0f), 0.0f, static_cast<float>(cfg.width - 1));
-        a.pos.y = std::clamp(a.pos.y + (a.pos.y < cfg.height / 2.0f ? 1.0f : -1.0f), 0.0f, static_cast<float>(cfg.height - 1));
+        a.pos.x = clamp_value(a.pos.x + (a.pos.x < cfg.width / 2.0f ? 1.0f : -1.0f), 0.0f, static_cast<float>(cfg.width - 1));
+        a.pos.y = clamp_value(a.pos.y + (a.pos.y < cfg.height / 2.0f ? 1.0f : -1.0f), 0.0f, static_cast<float>(cfg.height - 1));
         a.energy -= 0.3f * a.body_size; // Oceans are deadly
         if(a.energy <= 0) a.alive = false;
         continue;
@@ -252,8 +262,8 @@ inline void step_agents_movement(std::vector<Agent>& population, const Config& c
       if (action == 2) dx = -1.0f;
       if (action == 3) dx = 1.0f;
 
-      float new_x = std::clamp(a.pos.x + dx, 0.0f, static_cast<float>(cfg.width - 1));
-      float new_y = std::clamp(a.pos.y + dy, 0.0f, static_cast<float>(cfg.height - 1));
+      float new_x = clamp_value(a.pos.x + dx, 0.0f, static_cast<float>(cfg.width - 1));
+      float new_y = clamp_value(a.pos.y + dy, 0.0f, static_cast<float>(cfg.height - 1));
       size_t target_i = idx_2d(static_cast<int>(new_x), static_cast<int>(new_y), cfg);
 
       if (static_cast<Biome>(world.biome[target_i]) != Biome::Ocean) {
@@ -269,6 +279,9 @@ inline void step_agents_movement(std::vector<Agent>& population, const Config& c
       const float biome_mult = biome_move_cost(curBiome);
       const float move_cost = (0.015f + 0.01f * (std::abs(dx) + std::abs(dy))) * biome_mult * a.body_size;
       const float thermal_penalty = 0.04f * std::abs(world.temperature[i] - 0.58f) * (2.0f - a.body_size); // Small agents get colder
+      const float habitat_match_score = climate_match(a, world.temperature[i], world.moisture[i]);
+      const float habitat_bonus = 0.03f * habitat_match_score;
+      const float habitat_stress = 0.08f * std::pow(1.0f - habitat_match_score, 2.0f);
 
       float age_ratio = static_cast<float>(a.age) / static_cast<float>(std::max(a.max_lifespan, 1));
       float metabolic_cost = a.metabolic_rate * (1.0f + 0.3f * age_ratio);
@@ -300,7 +313,8 @@ inline void step_agents_movement(std::vector<Agent>& population, const Config& c
       const float density = density_radius(world.occupancy, x, y, 1.5f, cfg);
       const float social = std::exp(-std::pow(density - 2.5f, 2.0f) / 3.0f) * 0.03f;
 
-      const float reward = 0.9f * harvest + 0.06f * novelty + social - move_cost - thermal_penalty - metabolic_cost - tox_damage;
+      const float reward = 0.9f * harvest + 0.06f * novelty + social + habitat_bonus
+                         - move_cost - thermal_penalty - habitat_stress - metabolic_cost - tox_damage;
       
       a.energy += reward;
       a.fitness += reward;
