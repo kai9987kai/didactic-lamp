@@ -4,6 +4,9 @@
 #include <cmath>
 #include <iomanip>
 #include <numeric>
+#include <limits>
+#include <locale>
+#include <map>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -29,10 +32,8 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
   m.active_event = active_event.type;
   m.event_intensity = active_event.intensity;
 
-  if (population.empty()) return m;
-
-  std::unordered_map<int, int> species_counts;
-  species_counts.reserve(128);
+  // Ordered reductions make output stable within a compiler/runtime environment.
+  std::map<int, int> species_counts;
 
   float sum_f = 0.0f;
   float max_f = -1e9f;
@@ -45,6 +46,7 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
 
   for (const auto& a : population) {
     if (!a.alive) continue;
+    ++m.population;
     sum_f += a.fitness;
     max_f = std::max(max_f, a.fitness);
     sum_n += a.novelty_score;
@@ -62,7 +64,7 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
     species_counts[a.species_id] += 1;
   }
 
-  const float n = static_cast<float>(population.size());
+  const float n = static_cast<float>(m.population);
   if(n > 0.0f) {
     m.mean_fitness = sum_f / n;
     m.max_fitness = max_f;
@@ -74,13 +76,19 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
     m.mean_habitat_match = sum_match / n;
   }
 
-  float h = 0.0f;
+  double h = 0.0;
+  double concentration = 0.0;
   for (const auto& kv : species_counts) {
-    float p = kv.second / n;
-    if (p > 0.0f) h -= p * std::log(std::max(p, 1e-8f));
+    const double p = static_cast<double>(kv.second) / m.population;
+    h -= p * std::log(p);
+    concentration += p * p;
   }
-  m.diversity_shannon = h;
+  m.diversity_shannon = static_cast<float>(h);
   m.species_count = static_cast<int>(species_counts.size());
+  m.effective_species = m.population > 0 ? static_cast<float>(std::exp(h)) : 0.0f;
+  m.inverse_simpson = concentration > 0 ? static_cast<float>(1.0 / concentration) : 0.0f;
+  m.species_evenness = m.species_count > 1 ? static_cast<float>(h / std::log(m.species_count))
+                                          : (m.species_count == 1 ? 1.0f : 0.0f);
 
   m.total_pheromone = 0.0f;
   for (float p : world.pheromone) m.total_pheromone += p;
@@ -95,7 +103,7 @@ inline Metrics compute_metrics(const std::vector<Agent>& population, const World
     resource_sum += world.resources[i];
     toxicity_sum += world.toxicity[i];
   }
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < 6 && cells > 0; ++i) {
     m.biome_distribution[i] = static_cast<float>(biome_counts[i]) / static_cast<float>(cells);
   }
   if (cells > 0) {
@@ -120,14 +128,28 @@ inline const char* biome_name(int b) {
 
 // ── JSON Output ──────────────────────────────────────────────────────────────
 inline std::string summary_json(const Config& cfg, const std::vector<Metrics>& metrics,
-                                 const std::vector<SpeciesRecord>& species_records) {
+                                 const std::vector<SpeciesRecord>& species_records,
+                                 const RunResult& run) {
   std::ostringstream os;
-  os << std::fixed << std::setprecision(4);
+  os.imbue(std::locale::classic());
+  os << std::setprecision(std::numeric_limits<float>::max_digits10);
   os << "{\n";
+  os << "  \"schema_version\": 2,\n";
+  os << "  \"model_version\": \"5.0\",\n";
+  os << "  \"reproducibility\": \"Same executable and standard library; cross-toolchain bitwise identity is not guaranteed\",\n";
   os << "  \"seed\": " << cfg.seed << ",\n";
   os << "  \"world\": {\"width\": " << cfg.width << ", \"height\": " << cfg.height << "},\n";
   os << "  \"config\": {"
-     << "\"simulation_ticks\": " << cfg.simulation_ticks
+     << "\"width\": " << cfg.width
+     << ", \"height\": " << cfg.height
+     << ", \"initial_agents\": " << cfg.initial_agents
+     << ", \"max_agents\": " << cfg.max_agents
+     << ", \"simulation_ticks\": " << cfg.simulation_ticks
+     << ", \"snapshot_interval\": " << cfg.snapshot_interval
+     << ", \"classification_interval\": " << cfg.classification_interval
+     << ", \"softmax_temperature\": " << cfg.softmax_temperature
+     << ", \"hunt_success_prob\": " << cfg.hunt_success_prob
+     << ", \"pheromone_decay\": " << cfg.pheromone_decay
      << ", \"tick_interval\": " << cfg.snapshot_interval
      << ", \"reproduction_threshold\": " << cfg.reproduction_threshold
       << ", \"predator_ratio\": " << cfg.predator_ratio
@@ -136,16 +158,45 @@ inline std::string summary_json(const Config& cfg, const std::vector<Metrics>& m
      << ", \"shock_interval\": " << cfg.shock_interval
      << ", \"shock_duration\": " << cfg.shock_duration
      << ", \"shock_strength\": " << cfg.shock_strength
+     << ", \"resource_recovery\": " << cfg.resource_recovery
      << "},\n";
+
+  os << "  \"run\": {\"status\": \"" << (run.extinction_tick >= 0 ? "extinct" : "completed")
+     << "\", \"ticks_completed\": " << run.ticks_completed
+     << ", \"extinction_tick\": ";
+  if (run.extinction_tick >= 0) os << run.extinction_tick; else os << "null";
+  os << ", \"final_population\": " << run.final_population
+     << ", \"total_births\": " << run.total_births
+     << ", \"total_deaths\": " << run.total_deaths
+     << ", \"population_time_integral\": " << run.population_time_integral << "},\n";
+
+  os << "  \"event_windows\": [";
+  bool first_event = true;
+  if (cfg.shock_interval > 0 && cfg.shock_duration > 0 && cfg.shock_strength > 0) {
+    for (int start = cfg.shock_interval; start <= run.ticks_completed; start += cfg.shock_interval) {
+      if (!first_event) os << ", ";
+      first_event = false;
+      os << "{\"type\": \"" << world_event_name(current_world_event(cfg, start).type)
+         << "\", \"start_tick\": " << start
+         << ", \"end_tick_exclusive\": " << std::min(start + cfg.shock_duration, run.ticks_completed + 1)
+         << ", \"strength\": " << cfg.shock_strength << "}";
+    }
+  }
+  os << "],\n";
 
   os << "  \"ticks\": [\n";
   for (size_t i = 0; i < metrics.size(); ++i) {
     const auto& m = metrics[i];
     os << "    {"
        << "\"tick\": " << m.tick
+       << ", \"population\": " << m.population
        << ", \"mean_fitness\": " << m.mean_fitness
        << ", \"max_fitness\": " << m.max_fitness
        << ", \"species_shannon\": " << m.diversity_shannon
+       << ", \"effective_species\": " << m.effective_species
+       << ", \"inverse_simpson\": " << m.inverse_simpson
+       << ", \"species_evenness\": " << m.species_evenness
+       << ", \"mean_novelty\": " << m.mean_novelty
        << ", \"species_count\": " << m.species_count
        << ", \"herbivore_count\": " << m.herbivore_count
        << ", \"predator_count\": " << m.predator_count

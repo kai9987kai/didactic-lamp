@@ -16,7 +16,7 @@ constexpr int kMemoryStates = 4; // RNN hidden state passed to next tick
 constexpr int kOutputNodes = kActions + kMemoryStates; // 9 outputs
 constexpr float kPi = 3.14159265358979323846f;
 
-// Neural policy architecture: 16 inputs → 10 hidden (tanh) → 9 outputs
+// Neural policy architecture: 18 inputs → 10 hidden (tanh) → 9 outputs
 constexpr int kInputFeatures = 18;   // env state, niche match, and 4 recurrent memory values
 constexpr int kHiddenNeurons = 10;
 constexpr int kTraitGenes = 6;       // morphology + thermal/moisture niche preferences
@@ -25,7 +25,7 @@ constexpr int kBaseGenomeSize = kInputFeatures * kHiddenNeurons   // input→hid
                               + kHiddenNeurons                     // hidden biases
                               + kHiddenNeurons * kOutputNodes      // hidden→output weights
                               + kOutputNodes;                      // output biases
-// = 16*10 + 10 + 10*9 + 9 = 160 + 10 + 90 + 9 = 269
+// 18*10 + 10 + 10*9 + 9 = 289 policy genes.
 constexpr int kGenomeSize = kBaseGenomeSize + kTraitGenes;          // 295
 
 // ── Enums ────────────────────────────────────────────────────────────────────
@@ -96,17 +96,19 @@ struct Config {
   int max_agents{6000};              // population cap to prevent OOM
   int simulation_ticks{5000};        // Phase 2: continuous run length
   int snapshot_interval{100};        // Save metrics every N ticks
+  int classification_interval{25};   // Independent of observation frequency
   uint64_t seed{7};
   float softmax_temperature{0.8f};
   float predator_ratio{0.05f};        
-  float hunt_success_prob{0.35f};     
+  float hunt_success_prob{0.12f};     // Base probability before size/energy modifiers
   float pheromone_decay{0.92f};       
   float speciation_threshold{0.55f};
-  float reproductive_distance{0.42f};
+  float reproductive_distance{0.50f}; // Full-genome RMS, near initial pair-distance scale
   float reproduction_threshold{11.0f}; // Energy required to spawn offspring
   int shock_interval{180};
   int shock_duration{45};
   float shock_strength{0.18f};
+  float resource_recovery{0.002f};   // Abstract seed-bank recolonization rate
 };
 
 struct ActiveWorldEvent {
@@ -143,6 +145,10 @@ struct Metrics {
   float max_fitness{};
   float mean_novelty{};
   float diversity_shannon{};
+  float effective_species{};        // exp(Shannon), Hill diversity q=1
+  float inverse_simpson{};          // Hill diversity q=2
+  float species_evenness{};         // Shannon / log(richness); singleton = 1
+  int population{};
   int herbivore_count{};
   int predator_count{};
   int species_count{};
@@ -164,6 +170,15 @@ struct Metrics {
   int deaths{};                  // Natural + hunted deaths this interval
   WorldEvent active_event{WorldEvent::None};
   float event_intensity{};
+};
+
+struct RunResult {
+  int ticks_completed{};
+  int extinction_tick{-1};
+  int final_population{};
+  uint64_t total_births{};
+  uint64_t total_deaths{};
+  uint64_t population_time_integral{}; // Sum of live counts after each completed step
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -189,7 +204,7 @@ inline const char* world_event_name(WorldEvent event) {
 
 inline ActiveWorldEvent current_world_event(const Config& cfg, int tick) {
   ActiveWorldEvent state;
-  if (cfg.shock_interval <= 0 || cfg.shock_duration <= 0 || tick < cfg.shock_interval) {
+  if (cfg.shock_interval <= 0 || cfg.shock_duration <= 0 || cfg.shock_strength <= 0.0f || tick < cfg.shock_interval) {
     return state;
   }
 

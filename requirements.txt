@@ -1,0 +1,2 @@
+# Plotting is optional; the simulator and experiment runner do not need Python packages.
+matplotlib>=3.8,<4

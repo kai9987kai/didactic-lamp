@@ -10,7 +10,7 @@ namespace sim {
 // ── Genetic Distance ─────────────────────────────────────────────────────────
 inline float genetic_distance(const Agent& a, const Agent& b) {
   float sum = 0.0f;
-  const int compare_len = std::min(32, kGenomeSize);
+  constexpr int compare_len = kGenomeSize;
   for (int i = 0; i < compare_len; ++i) {
     float d = a.genome[i] - b.genome[i];
     sum += d * d;
@@ -22,7 +22,8 @@ inline float genetic_distance(const Agent& a, const Agent& b) {
 struct SpeciesTracker {
   struct Centroid {
     int id;
-    std::array<float, 32> genome_sig{};
+    AgentType type{AgentType::Herbivore};
+    std::array<float, kGenomeSize> genome_sig{};
     int population{0};
   };
 
@@ -40,8 +41,9 @@ struct SpeciesTracker {
       int best_id = -1;
 
       for (size_t ci = 0; ci < centroids.size(); ++ci) {
+        if (centroids[ci].type != a.type) continue;
         float dist = 0.0f;
-        const int compare_len = std::min(32, kGenomeSize);
+        constexpr int compare_len = kGenomeSize;
         for (int i = 0; i < compare_len; ++i) {
           float d = a.genome[i] - centroids[ci].genome_sig[i];
           dist += d * d;
@@ -57,7 +59,7 @@ struct SpeciesTracker {
       if (best_dist < threshold && best_id >= 0) {
         a.species_id = centroids[best_id].id;
         centroids[best_id].population++;
-        const int compare_len = std::min(32, kGenomeSize);
+        constexpr int compare_len = kGenomeSize;
         float alpha = 0.01f;
         for (int i = 0; i < compare_len; ++i) {
           centroids[best_id].genome_sig[i] =
@@ -66,8 +68,9 @@ struct SpeciesTracker {
       } else {
         Centroid new_c;
         new_c.id = next_species_id++;
+        new_c.type = a.type;
         new_c.population = 1;
-        const int compare_len = std::min(32, kGenomeSize);
+        constexpr int compare_len = kGenomeSize;
         for (int i = 0; i < compare_len; ++i) new_c.genome_sig[i] = a.genome[i];
         centroids.push_back(new_c);
         a.species_id = new_c.id;
@@ -137,8 +140,13 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
     cell_agents[idx_2d(x, y, cfg)].push_back(idx);
   }
 
-  // Cap population to prevent OOM
+  // Reserve the available live-population slots before selecting any parents.
   if (curr_pop_size >= cfg.max_agents) return 0;
+  const int available_births = cfg.max_agents - curr_pop_size;
+  const size_t original_population_size = population.size();
+  std::vector<Agent> newborns;
+  newborns.reserve(std::min(static_cast<size_t>(available_births), original_population_size / 2));
+  const float minimum_parent_energy = std::max(cfg.reproduction_threshold, 5.0f);
 
   std::uniform_real_distribution<float> coin(0.0f, 1.0f);
   std::normal_distribution<float> mut(0.0f, 0.04f); // Slightly higher mutation for continuous runs
@@ -146,9 +154,9 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
   std::uniform_int_distribution<int> lifespan_dist(200, 600);
 
   // Identify eligible parents
-  for (int idx = 0; idx < static_cast<int>(population.size()); ++idx) {
+  for (size_t idx = 0; idx < original_population_size && births_this_tick < available_births; ++idx) {
     Agent& a = population[idx];
-    if (!a.alive || a.energy < cfg.reproduction_threshold) continue;
+    if (!a.alive || a.energy < minimum_parent_energy) continue;
     if (current_tick - a.last_mate_tick < 30) continue; // 30-tick cooldown
 
     int px = static_cast<int>(a.pos.x);
@@ -157,24 +165,27 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
     // Scan adjacent for mate (radius 2)
     for (int dy = -2; dy <= 2; ++dy) {
       for (int dx = -2; dx <= 2; ++dx) {
-        int nx = clamp_value(px + dx, 0, cfg.width - 1);
-        int ny = clamp_value(py + dy, 0, cfg.height - 1);
+        const int nx = px + dx;
+        const int ny = py + dy;
+        if (nx < 0 || nx >= cfg.width || ny < 0 || ny >= cfg.height) continue;
         size_t ci = idx_2d(nx, ny, cfg);
 
         for (int mate_idx : cell_agents[ci]) {
-          if (mate_idx == idx) continue;
+          if (static_cast<size_t>(mate_idx) == idx) continue;
           Agent& mate = population[mate_idx];
           
-          if (!mate.alive || mate.energy < cfg.reproduction_threshold) continue;
+          if (!mate.alive || mate.energy < minimum_parent_energy) continue;
           
           if (mate.type == a.type && 
               mate.gender != a.gender &&
-              (current_tick - mate.last_mate_tick > 30) &&
+              (current_tick - mate.last_mate_tick >= 30) &&
               genetic_distance(a, mate) <= cfg.reproductive_distance) {
 
             // Found a valid mate! Both lose energy and trigger cooldown.
             a.energy -= 5.0f;
             mate.energy -= 5.0f;
+            if (a.energy <= 0.0f) a.alive = false;
+            if (mate.energy <= 0.0f) mate.alive = false;
             a.last_mate_tick = current_tick;
             mate.last_mate_tick = current_tick;
 
@@ -186,6 +197,7 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
             child.energy = 4.0f; // Started strong
             child.max_lifespan = lifespan_dist(rng);
             child.type = a.type;
+            child.species_id = a.species_id; // Inherit until the next scheduled classification.
             child.gender = static_cast<Gender>(gender_dist(rng));
             child.birth_tick = current_tick;
             
@@ -202,7 +214,7 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
             extern void decode_morphology(Agent&);
             decode_morphology(child);
 
-            population.push_back(std::move(child));
+            newborns.push_back(std::move(child));
             births_this_tick++;
             
             // Prevent multiple matings per tick
@@ -213,6 +225,9 @@ inline int resolve_mating(std::vector<Agent>& population, const Config& cfg,
     }
   next_agent:;
   }
+
+  // Appending once keeps parent references valid and newborns out of this tick's mating pool.
+  population.insert(population.end(), newborns.begin(), newborns.end());
 
   return births_this_tick;
 }

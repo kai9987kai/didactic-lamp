@@ -163,6 +163,10 @@ inline void update_climate_and_resources(WorldFields& world, const Config& cfg, 
       const float pressure = 0.03f * mean3x3(world.occupancy, x, y, cfg);
       
       float res_increase = growth * world.resources[i] * (carrying - world.resources[i]) - pressure;
+      // A configurable seed-bank term restores depleted vegetation. Zero retains
+      // strictly local logistic growth, for which an empty cell stays empty.
+      const float recovery_rate = clamp_value(cfg.resource_recovery, 0.0f, 1.0f);
+      res_increase += recovery_rate * std::max(0.0f, carrying - world.resources[i]);
       if (event.active) {
         switch (event.type) {
           case WorldEvent::Drought: res_increase -= 0.030f * event.intensity * (0.3f + carrying); break;
@@ -211,8 +215,6 @@ inline void update_climate_and_resources(WorldFields& world, const Config& cfg, 
       pheromone_next[i] = pheromone_decay * (0.7f * world.pheromone[i] + 0.3f * diffused);
       pheromone_next[i] = std::max(pheromone_next[i], 0.0f);
       
-      // Gradually wipe occupancy
-      world.occupancy[i] *= 0.8f; 
     }
   }
 

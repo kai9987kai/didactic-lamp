@@ -15,6 +15,16 @@ inline float climate_match(const Agent& a, float temperature, float moisture) {
   return clamp_value(0.55f * thermal_match + 0.45f * moisture_match, 0.0f, 1.0f);
 }
 
+// Occupancy is current live body mass; visitation tracks historical activity.
+inline void rebuild_occupancy(const std::vector<Agent>& population, WorldFields& world, const Config& cfg) {
+  std::fill(world.occupancy.begin(), world.occupancy.end(), 0.0f);
+  for (const auto& a : population) {
+    if (a.alive) {
+      world.occupancy[idx_2d(static_cast<int>(a.pos.x), static_cast<int>(a.pos.y), cfg)] += a.body_size;
+    }
+  }
+}
+
 // ── Neural Policy Network (RNN) ──────────────────────────────────────────────
 inline std::array<float, kOutputNodes> policy_logits(Agent& a, const Config& cfg,
                                                     const WorldFields& world, int x, int y,
@@ -185,8 +195,9 @@ inline void resolve_hunting(std::vector<Agent>& population, const Config& cfg,
       for (int dx = -r; dx <= r; ++dx) {
         if(dx*dx + dy*dy > predator.sensory_radius * predator.sensory_radius) continue;
         
-        int nx = clamp_value(px + dx, 0, cfg.width - 1);
-        int ny = clamp_value(py + dy, 0, cfg.height - 1);
+        const int nx = px + dx;
+        const int ny = py + dy;
+        if (nx < 0 || nx >= cfg.width || ny < 0 || ny >= cfg.height) continue;
         size_t ci = idx_2d(nx, ny, cfg);
 
         for (int prey_idx : cell_agents[ci]) {
@@ -195,7 +206,7 @@ inline void resolve_hunting(std::vector<Agent>& population, const Config& cfg,
 
           // Body Size heavily impacts hunting!
           float size_advantage = predator.body_size / prey.body_size;
-          float success_prob = 0.12f * size_advantage; // Much lower success
+          float success_prob = cfg.hunt_success_prob * size_advantage;
           success_prob += 0.05f * (predator.energy / 12.0f);
           success_prob = clamp_value(success_prob, 0.05f, 0.85f);
 
@@ -215,6 +226,7 @@ inline void resolve_hunting(std::vector<Agent>& population, const Config& cfg,
       }
     }
     predator.energy -= 0.05f * predator.body_size; // Big predators starve faster if they fail
+    if (predator.energy <= 0.0f) predator.alive = false;
     next_predator:;
   }
 }
@@ -240,6 +252,15 @@ inline void step_agents_movement(std::vector<Agent>& population, const Config& c
     int moves = 1;
     if(a.speed_mod > 1.25f && speed_roll(rng) < (a.speed_mod - 1.0f) * 0.5f) moves = 2; // Extra fast
     if(a.speed_mod < 0.75f && speed_roll(rng) < (1.0f - a.speed_mod)) moves = 0;        // Sluggish
+
+    // Movement opportunities can be zero, but living tissue still consumes energy.
+    if (moves == 0) {
+      const float age_ratio = static_cast<float>(a.age) / static_cast<float>(std::max(a.max_lifespan, 1));
+      const float metabolic_cost = a.metabolic_rate * (1.0f + 0.3f * age_ratio);
+      a.energy -= metabolic_cost;
+      a.fitness -= metabolic_cost;
+      if (a.energy <= 0.0f) a.alive = false;
+    }
 
     for(int m=0; m < moves && a.alive; ++m) {
       int x = static_cast<int>(a.pos.x);
@@ -272,8 +293,6 @@ inline void step_agents_movement(std::vector<Agent>& population, const Config& c
 
       x = static_cast<int>(a.pos.x); y = static_cast<int>(a.pos.y);
       i = idx_2d(x, y, cfg);
-
-      world.occupancy[i] += a.body_size; // Big agents take more space!
 
       Biome curBiome = static_cast<Biome>(world.biome[i]);
       const float biome_mult = biome_move_cost(curBiome);
@@ -326,6 +345,7 @@ inline void step_agents_movement(std::vector<Agent>& population, const Config& c
   }
 
   resolve_hunting(population, cfg, world, rng);
+  rebuild_occupancy(population, world, cfg);
 }
 
 }  // namespace sim
